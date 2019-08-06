@@ -1,0 +1,9 @@
+heritage_text_manager.editsource:
+  path: '/source/{sourceid}/edit'
+  defaults:
+    _form: '\Drupal\heritage_text_manager\Form\EditSource'
+    _title_callback: '\Drupal\heritage_text_manager\Controller\TextManager::getTitle'
+  requirements:
+    _permission: 'add heritage text'
+  options:
+    _admin_route: TRUE

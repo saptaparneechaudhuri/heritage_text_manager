@@ -1,0 +1,98 @@
+<?php
+
+use Drupal\node\NodeInterface;
+use Drupal\Component\Serialization\Json;
+use Drupal\Core\Url;
+
+/**
+ * Implements hook_form_alter() 
+ * Add the taxonomy create form
+ */
+function heritage_text_manager_form_alter(&$form, \Drupal\Core\Form\FormStateInterface $form_state, $form_id)  {
+	if($form_id == 'node_heritage_text_form' || $form_id == 'node_heritage_text_edit_form'){
+		//print("<pre>");print_r($form['author']);exit;
+		$form['author']['markup'] = array(
+			'#type' => 'item',
+			'#markup' => t('Select the author name by typing in the above field. If it is not present click here to add the Author.'),
+		);
+	}
+} 
+
+/**
+ * Implements hook_node_insert() 
+ * for saving metadata on inserting a node.
+ */
+function heritage_text_manager_node_insert(NodeInterface $node)  {
+	$result = _insert_meta_info($node);
+} 
+
+/**
+ * Implements hook_node_update() 
+ * for saving metadata on inserting a node.
+ */
+function heritage_text_manager_node_update(NodeInterface $node)  {
+	$result = _insert_meta_info($node);
+} 
+
+/**
+ * Implements hook_node_view() 
+ * for adding an edit link on every field
+ */
+function heritage_text_manager_node_view(array &$build, \Drupal\Core\Entity\EntityInterface $entity, \Drupal\Core\Entity\Display\EntityViewDisplayInterface $display, $view_mode) {
+	$node_type = $entity->getType();
+	$text_id = db_query("SELECT entity_id FROM `node__field_machine_name` WHERE field_machine_name_value = :node_type", array(':node_type' => $node_type))->fetchField();
+	if(isset($text_id) && $text_id > 0){
+		$nid = $entity->id();
+		$field_names = db_query("SELECT field_name, id FROM `heritage_field_meta_data` WHERE nid = :nid", array(':nid' => $nid))->fetchAll();		
+		foreach($field_names as $field_name){
+			$attributes = [
+				'class' => ['use-ajax', 'align-right'],
+				'data-dialog-type' => 'modal',
+				'data-dialog-options' => Json::encode([
+					'width' => 700,
+				]),
+			];
+			$url = Url::fromRoute('heritage_text_manager.editsource', array('sourceid' => $field_name->id), array('attributes' => $attributes));
+			$source_node_edit_link = \Drupal::l(t('Edit'), $url);
+			$build[$field_name->field_name][0]['#text'] = $build[$field_name->field_name][0]['#text'].$source_node_edit_link;
+		}
+	}
+}
+
+/**
+ * Custom function to save meta data info.
+ *
+ * @param node 
+ *     Drupal Node Object
+ */
+function _insert_meta_info($node){
+	$node_type = $node->getType();
+	$text_id = db_query("SELECT entity_id FROM `node__field_machine_name` WHERE field_machine_name_value = :node_type", array(':node_type' => $node_type))->fetchField();
+	if(isset($text_id) && $text_id > 0){
+		$sources = db_query("SELECT id, format, language FROM `heritage_source_info` WHERE text_id = :text_id", array(':text_id' => $text_id))->fetchAll();
+		for($i=0; $i<count($sources); $i++){
+			$formats = explode(',', $sources[$i]->format);
+			for($j=0; $j<count($formats); $j++){
+				$field_name = 'field_'.$node_type.'_'.$sources[$i]->id.'_'.strtolower($formats[$j]);
+				$check_info = db_query("SELECT COUNT(*) FROM `heritage_field_meta_data` WHERE nid = :nid AND field_name = :field_name", array(':nid' => $node->id(), ':field_name' => $field_name))->fetchField();
+				if($check_info == 0){
+					$db = \Drupal::database();
+					if(isset($node->{$field_name}->value)){
+						$sourceid = $db->insert('heritage_field_meta_data')
+						->fields ([
+							'nid' => $node->id(),
+							'field_name' => $field_name,
+							'language' => $sources[$i]->language
+						])
+						->execute();
+					}
+				}
+				else {
+					$updateQuery = "UPDATE `heritage_field_meta_data` SET language = :language WHERE field_name = :field_name AND nid = :nid";
+					db_query($updateQuery, array(':language' => $sources[$i]->language, ':field_name' => $field_name, ':nid' => $node->id()));
+				}
+			}
+		}
+	}
+	return TRUE;
+}
